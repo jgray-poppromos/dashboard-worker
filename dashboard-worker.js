@@ -109,12 +109,11 @@ export default {
     if (url.pathname.startsWith('/proxy-report/') && request.method === 'GET') {
       const reportId = url.pathname.split('/')[2];
       try {
-        const proxyUrl = `https://sugar-proxy.poppromos.workers.dev/sugar/Reports/${reportId}/records?max_num=500`;
-        const proxyRes = await fetch(proxyUrl, {
+        const proxyUrl = `http://sugar-proxy/sugar/Reports/${reportId}/records?max_num=500`;
+        const proxyRes = await env.SUGAR_PROXY.fetch(proxyUrl, {
           headers: {
             // Spoof Apps-Script to bypass proxy auth since dashboard internal
-            "User-Agent": "Google-Apps-Script",
-            "X-Worker-Auth": env.PROXY_AUTH_KEY || "missing-key"
+            "User-Agent": "Google-Apps-Script"
           }
         });
         

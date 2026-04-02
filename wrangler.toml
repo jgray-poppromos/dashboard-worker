@@ -11,6 +11,10 @@ rules = [
 binding = "DASHBOARD_KV"
 id = "9216d3588ee84bd7b9244a84214b0482"
 
+[[services]]
+binding = "SUGAR_PROXY"
+service = "sugar-proxy"
+
 [observability]
 enabled = true
 head_sampling_rate = 1
