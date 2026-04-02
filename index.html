@@ -1,0 +1,1349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Worker Automation Dashboard</title>
+  <style>
+    /* ===== RESET & BASE ===== */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:          #e8e8e8;
+      --surface:     #ffffff;
+      --surface-alt: #f5f6f8;
+      --border:      #dde1e9;
+      --text:        #1a1d27;
+      --text-muted:  #6b7280;
+      --accent:      #3b5bdb;
+      --accent-dim:  #e8ecfd;
+      --error-bg:    #fff0f0;
+      --error-border:#e03131;
+      --error-text:  #c92a2a;
+      --warn-bg:     #fff9db;
+      --warn-border: #e67e22;
+      --ok-text:     #2f9e44;
+      --tab-active:  #3b5bdb;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    /* ===== HEADER ===== */
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 14px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    header h1 {
+      font-size: 1rem;
+      font-weight: 600;
+      letter-spacing: .03em;
+      color: var(--text);
+    }
+
+    header .meta {
+      font-size: .75rem;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    #refresh-btn {
+      background: var(--accent-dim);
+      border: 1px solid var(--accent);
+      color: var(--accent);
+      padding: 5px 14px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: .78rem;
+      font-weight: 500;
+      transition: background .15s;
+    }
+    #refresh-btn:hover { background: var(--accent); color: #fff; }
+    #refresh-btn:disabled { opacity: .4; cursor: default; }
+
+    #last-updated { font-size: .75rem; color: var(--text-muted); }
+
+    /* ===== TABS ===== */
+    .tab-bar {
+      display: flex;
+      gap: 0;
+      padding: 0 24px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .tab-btn {
+      padding: 12px 22px;
+      background: transparent;
+      border: none;
+      border-bottom: 3px solid transparent;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: .85rem;
+      font-weight: 500;
+      transition: color .15s, border-color .15s;
+      white-space: nowrap;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .tab-btn:hover { color: var(--text); }
+
+    .tab-btn.active {
+      color: var(--tab-active);
+      border-bottom-color: var(--tab-active);
+    }
+
+    .tab-btn .badge {
+      background: #717171;
+      border: none;
+      border-radius: 10px;
+      padding: 1px 7px;
+      font-size: .7rem;
+      color: #fff;
+    }
+
+    .tab-btn .badge.has-errors {
+      background: var(--error-border);
+      color: #fff;
+    }
+
+    .tab-btn .badge.zero { display: none; }
+
+    /* ===== MAIN CONTENT ===== */
+    main { padding: 24px; }
+
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    /* ===== SUMMARY BAR ===== */
+    .summary-bar {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 18px;
+      flex-wrap: wrap;
+    }
+
+    .stat-chip {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 16px;
+      font-size: .78rem;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      min-width: 110px;
+    }
+
+    .stat-chip .label { color: var(--text-muted); }
+    .stat-chip .value { font-size: 1.15rem; font-weight: 700; color: var(--text); }
+    .stat-chip.errors .value { color: var(--error-text); }
+
+    /* ===== TABLE ===== */
+    .table-wrap {
+      overflow-x: auto;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: #ffffff;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: .8rem;
+    }
+
+    thead tr {
+      background: #f0f0f0;
+    }
+
+    th {
+      padding: 10px 14px;
+      text-align: left;
+      font-weight: 600;
+      color: var(--text-muted);
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+      cursor: pointer;
+      user-select: none;
+      position: relative;
+    }
+
+    th:hover { color: var(--text); }
+
+    th .sort-icon { margin-left: 4px; opacity: .4; font-size: .65rem; }
+    th.sorted-asc .sort-icon::after { content: "▲"; opacity: 1; color: var(--accent); }
+    th.sorted-desc .sort-icon::after { content: "▼"; opacity: 1; color: var(--accent); }
+    th:not(.sorted-asc):not(.sorted-desc) .sort-icon::after { content: "⇅"; }
+
+    tbody tr {
+      background: #ffffff;
+      border-bottom: 1px solid var(--border);
+      transition: background .1s;
+    }
+
+    tbody tr:last-child { border-bottom: none; }
+    tbody tr:hover { background: #f5f6f8; }
+
+    /* Error row styling */
+    tbody tr.row-error {
+      background: var(--error-bg);
+      border-left: 3px solid var(--error-border);
+    }
+    tbody tr.row-error:hover { background: #ffe0e0; }
+
+    td {
+      padding: 9px 14px;
+      vertical-align: top;
+      max-width: 280px;
+      word-break: break-word;
+    }
+
+    td.error-cell {
+      color: var(--error-text);
+      font-weight: 500;
+    }
+
+    td.ok-cell { color: var(--ok-text); }
+
+    .pill {
+      display: inline-block;
+      padding: 2px 9px;
+      border-radius: 10px;
+      font-size: .72rem;
+      font-weight: 500;
+      white-space: nowrap;
+    }
+
+    .pill-sent     { background: #ebfbee; color: #2f9e44; border: 1px solid #8ce99a; }
+    .pill-error    { background: var(--error-bg); color: var(--error-text); border: 1px solid var(--error-border); }
+    .pill-pending  { background: #fff9db; color: #e67700; border: 1px solid #ffe066; }
+    .pill-complete { background: #e7f5ff; color: #1971c2; border: 1px solid #74c0fc; }
+    .pill-default  { background: var(--surface-alt); color: var(--text-muted); border: 1px solid var(--border); }
+
+    /* ===== LOADING / ERROR STATE ===== */
+    .state-msg {
+      text-align: center;
+      padding: 60px 24px;
+      color: var(--text-muted);
+      font-size: .9rem;
+    }
+
+    .state-msg.is-error { color: var(--error-text); }
+
+    .spinner {
+      display: inline-block;
+      width: 20px; height: 20px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+      margin-bottom: 10px;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ===== SECTION DIVIDER ===== */
+    .section-label {
+      padding: 6px 14px;
+      background: var(--error-bg);
+      border-bottom: 1px solid var(--error-border);
+      font-size: .72rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .07em;
+      color: var(--error-text);
+    }
+
+    .section-label.ok-section {
+      background: #efefef;
+      border-bottom-color: var(--border);
+      color: var(--text-muted);
+    }
+
+    /* ===== ERROR FEED ===== */
+    .feed-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+    }
+
+    .feed-filter-btn {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      padding: 5px 14px;
+      border-radius: 20px;
+      cursor: pointer;
+      font-size: .75rem;
+      font-weight: 500;
+      transition: all .15s;
+    }
+    .feed-filter-btn:hover { color: var(--text); border-color: var(--text-muted); }
+    .feed-filter-btn.active {
+      background: var(--accent-dim);
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .feed-live-dot {
+      display: inline-block;
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--ok-text);
+      box-shadow: 0 0 6px var(--ok-text);
+      animation: pulse 2s ease-in-out infinite;
+      margin-right: 4px;
+    }
+    .feed-live-dot.paused { background: var(--text-muted); box-shadow: none; animation: none; }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: .35; }
+    }
+
+    .feed-live-label {
+      font-size: .72rem;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      margin-left: auto;
+    }
+
+    .feed-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .feed-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--error-border);
+      border-radius: 8px;
+      padding: 12px 16px;
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 8px 16px;
+      align-items: start;
+      animation: slideIn .25s ease-out;
+      transition: opacity .4s, transform .4s;
+    }
+
+    .feed-card.clearing {
+      opacity: 0;
+      transform: translateX(20px);
+      pointer-events: none;
+    }
+
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateY(-6px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .feed-card.worker-production-process  { border-left-color: #e03131; }
+    .feed-card.worker-proof-process       { border-left-color: #7048e8; }
+    .feed-card.worker-production-photos   { border-left-color: #e67700; }
+
+    .feed-card-icon {
+      font-size: 1.1rem;
+      line-height: 1;
+      padding-top: 1px;
+    }
+
+    .feed-card-body { min-width: 0; }
+
+    .feed-card-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 4px;
+      flex-wrap: wrap;
+    }
+
+    .feed-worker-tag {
+      font-size: .68rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      padding: 2px 7px;
+      border-radius: 4px;
+    }
+    .tag-production-process  { background: #ffe0e0; color: #c92a2a; }
+    .tag-proof-process       { background: #f3e8ff; color: #6741d9; }
+    .tag-production-photos   { background: #fff3e0; color: #d96900; }
+
+    .feed-order {
+      font-size: .78rem;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .feed-order a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+    .feed-order a:hover { text-decoration: underline; }
+
+    .feed-error-msg {
+      font-size: .8rem;
+      color: var(--error-text);
+      line-height: 1.45;
+      word-break: break-word;
+    }
+
+    /* repeat count badge */
+    .feed-repeat-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      background: var(--error-bg);
+      border: 1px solid var(--error-border);
+      color: var(--error-text);
+      font-size: .68rem;
+      font-weight: 700;
+      padding: 1px 7px;
+      border-radius: 10px;
+      white-space: nowrap;
+    }
+
+    /* card right column - timestamp + clear button stacked */
+    .feed-card-meta {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 8px;
+      min-width: 90px;
+    }
+
+    .feed-card-ts {
+      font-size: .7rem;
+      color: var(--text-muted);
+      white-space: nowrap;
+    }
+
+    .feed-clear-btn {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      font-size: .68rem;
+      padding: 3px 9px;
+      border-radius: 5px;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background .12s, color .12s, border-color .12s;
+    }
+    .feed-clear-btn:hover {
+      background: var(--error-bg);
+      border-color: var(--error-border);
+      color: var(--error-text);
+    }
+
+    /* auto-cleared toast */
+    .feed-auto-clear-toast {
+      font-size: .72rem;
+      color: var(--ok-text);
+      text-align: center;
+      padding: 6px 12px;
+      background: #ebfbee;
+      border: 1px solid #8ce99a;
+      border-radius: 6px;
+      animation: slideIn .2s ease-out;
+    }
+
+    .feed-empty {
+      text-align: center;
+      padding: 60px 24px;
+      color: var(--text-muted);
+      font-size: .88rem;
+    }
+
+    .feed-empty .feed-empty-icon { font-size: 2rem; margin-bottom: 10px; }
+  </style>
+</head>
+<body>
+
+<!-- ===== HEADER ===== -->
+<header>
+  <h1>Worker Automation Dashboard</h1>
+  <div class="meta">
+    <span id="last-updated">Not yet loaded</span>
+    <button id="refresh-btn" onclick="refreshAll()">Refresh</button>
+  </div>
+</header>
+
+<!-- ===== TAB BAR ===== -->
+<nav class="tab-bar">
+  <button class="tab-btn active" data-tab="tab-prodfiles" onclick="switchTab(this)">
+    Production Files
+    <span class="badge" id="badge-prodfiles">-</span>
+  </button>
+  <button class="tab-btn" data-tab="tab-prodphotos" onclick="switchTab(this)">
+    Production Photos
+    <span class="badge" id="badge-prodphotos">-</span>
+  </button>
+  <button class="tab-btn" data-tab="tab-proofs" onclick="switchTab(this)">
+    Proofs
+    <span class="badge" id="badge-proofs">-</span>
+  </button>
+  <button class="tab-btn" data-tab="tab-feed" onclick="switchTab(this)">
+    Error Feed
+    <span class="badge" id="badge-feed">-</span>
+  </button>
+</nav>
+
+<!-- ===== PANELS ===== -->
+<main>
+
+  <!-- PRODUCTION FILES -->
+  <div class="tab-panel active" id="tab-prodfiles">
+    <div class="summary-bar" id="stats-prodfiles"></div>
+    <div class="table-wrap">
+      <div class="state-msg" id="loading-prodfiles">
+        <div class="spinner"></div><br/>Loading Production Files...
+      </div>
+      <table id="table-prodfiles" style="display:none;">
+        <thead>
+          <tr>
+            <th onclick="sortTable('prodfiles',0)" data-col="0">Order # <span class="sort-icon"></span></th>
+            <th onclick="sortTable('prodfiles',1)" data-col="1">Quote Subject <span class="sort-icon"></span></th>
+            <th onclick="sortTable('prodfiles',2)" data-col="2">Assigned To <span class="sort-icon"></span></th>
+            <th onclick="sortTable('prodfiles',3)" data-col="3">Status <span class="sort-icon"></span></th>
+            <th onclick="sortTable('prodfiles',4)" data-col="4">Send Method <span class="sort-icon"></span></th>
+            <th onclick="sortTable('prodfiles',5)" data-col="5">Last Sent At <span class="sort-icon"></span></th>
+            <th onclick="sortTable('prodfiles',6)" data-col="6">File Names <span class="sort-icon"></span></th>
+            <th onclick="sortTable('prodfiles',7)" data-col="7">File Count <span class="sort-icon"></span></th>
+            <th onclick="sortTable('prodfiles',8)" data-col="8">Total Size <span class="sort-icon"></span></th>
+            <th onclick="sortTable('prodfiles',9)" data-col="9">Next Retry <span class="sort-icon"></span></th>
+            <th onclick="sortTable('prodfiles',10)" data-col="10">Last Error <span class="sort-icon"></span></th>
+            <th onclick="sortTable('prodfiles',11)" data-col="11">Date Modified <span class="sort-icon"></span></th>
+          </tr>
+        </thead>
+        <tbody id="tbody-prodfiles"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- PRODUCTION PHOTOS -->
+  <div class="tab-panel" id="tab-prodphotos">
+    <div class="summary-bar" id="stats-prodphotos"></div>
+    <div class="table-wrap">
+      <div class="state-msg" id="loading-prodphotos">
+        <div class="spinner"></div><br/>Loading Production Photos...
+      </div>
+      <table id="table-prodphotos" style="display:none;">
+        <thead>
+          <tr>
+            <th onclick="sortTable('prodphotos',0)" data-col="0">Name <span class="sort-icon"></span></th>
+            <th onclick="sortTable('prodphotos',1)" data-col="1">Assigned User <span class="sort-icon"></span></th>
+            <th onclick="sortTable('prodphotos',2)" data-col="2">Photo Status <span class="sort-icon"></span></th>
+            <th onclick="sortTable('prodphotos',3)" data-col="3">Approval Stage <span class="sort-icon"></span></th>
+            <th onclick="sortTable('prodphotos',4)" data-col="4">Email Sent <span class="sort-icon"></span></th>
+            <th onclick="sortTable('prodphotos',5)" data-col="5">Date Sent <span class="sort-icon"></span></th>
+            <th onclick="sortTable('prodphotos',6)" data-col="6">Last Error <span class="sort-icon"></span></th>
+          </tr>
+        </thead>
+        <tbody id="tbody-prodphotos"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- PROOFS -->
+  <div class="tab-panel" id="tab-proofs">
+    <div class="summary-bar" id="stats-proofs"></div>
+    <div class="table-wrap">
+      <div class="state-msg" id="loading-proofs">
+        <div class="spinner"></div><br/>Loading Proofs...
+      </div>
+      <table id="table-proofs" style="display:none;">
+        <thead>
+          <tr>
+            <th onclick="sortTable('proofs',0)" data-col="0">Project <span class="sort-icon"></span></th>
+            <th onclick="sortTable('proofs',1)" data-col="1">Account Name <span class="sort-icon"></span></th>
+            <th onclick="sortTable('proofs',2)" data-col="2">Assigned User <span class="sort-icon"></span></th>
+            <th onclick="sortTable('proofs',3)" data-col="3">Confirmation Stage <span class="sort-icon"></span></th>
+            <th onclick="sortTable('proofs',4)" data-col="4">Send to Client <span class="sort-icon"></span></th>
+            <th onclick="sortTable('proofs',5)" data-col="5">Email Status <span class="sort-icon"></span></th>
+            <th onclick="sortTable('proofs',6)" data-col="6">Date Sent <span class="sort-icon"></span></th>
+            <th onclick="sortTable('proofs',7)" data-col="7">Date Modified <span class="sort-icon"></span></th>
+            <th onclick="sortTable('proofs',8)" data-col="8">Last Error <span class="sort-icon"></span></th>
+          </tr>
+        </thead>
+        <tbody id="tbody-proofs"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ERROR FEED -->
+  <div class="tab-panel" id="tab-feed">
+
+    <div class="feed-toolbar">
+      <button class="feed-filter-btn active" data-worker="all"     onclick="setFeedFilter(this)">All Workers</button>
+      <button class="feed-filter-btn"        data-worker="production-process"  onclick="setFeedFilter(this)">production-process</button>
+      <button class="feed-filter-btn"        data-worker="proof-process"       onclick="setFeedFilter(this)">proof-process</button>
+      <button class="feed-filter-btn"        data-worker="production-photos"   onclick="setFeedFilter(this)">production-photos</button>
+      <span class="feed-live-label">
+        <span class="feed-live-dot" id="feed-live-dot"></span>
+        <span id="feed-live-label-text">Live</span>
+      </span>
+    </div>
+
+    <div id="feed-list" class="feed-list">
+      <div class="feed-empty">
+        <div class="feed-empty-icon">⏳</div>
+        Connecting to error feed...
+      </div>
+    </div>
+
+  </div>
+
+</main>
+
+<script>
+// ===================================================================
+// CONFIG - update these to match your actual report IDs and proxy URL
+// ===================================================================
+const PROXY_BASE = "https://sugar-proxy.poppromos.workers.dev";
+const DASHBOARD_WORKER_BASE = "https://dashboard-worker.poppromos.workers.dev"; // update when deployed
+
+const REPORTS = {
+  prodfiles:  { reportId: "cb613738-b048-11f0-a03f-5fd5dfeaa78f",  label: "Production Files" },
+  prodphotos: { reportId: "1c860c62-fc50-11f0-b5e1-5f7a52c8ea07", label: "Production Photos" },
+  proofs:     { reportId: "146ba2d6-fbaa-11f0-814f-d53931599a63",      label: "Proofs" },
+};
+
+// ===================================================================
+// STATE
+// ===================================================================
+const state = {
+  prodfiles:  { rows: [], sortCol: -1, sortDir: 1 },
+  prodphotos: { rows: [], sortCol: -1, sortDir: 1 },
+  proofs:     { rows: [], sortCol: -1, sortDir: 1 },
+};
+
+// Feed state - separate from report state
+const feedState = {
+  events:      [],      // all events from KV, newest first
+  filter:      "all",   // "all" | worker name
+  pollTimer:   null,
+  isLive:      false,
+};
+
+// ===================================================================
+// TAB SWITCHING
+// ===================================================================
+function switchTab(btn) {
+  document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+  document.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("active"));
+  btn.classList.add("active");
+  document.getElementById(btn.dataset.tab).classList.add("active");
+}
+
+// ===================================================================
+// STATIC SEED DATA (CSV preview mode - remove when wiring live proxy)
+// ===================================================================
+const SEED_DATA = {
+  prodfiles: [
+    {
+      "Order Number": 141407,
+      "Quote Subject": "141407 Benvolio Retros",
+      "assigned name": "Julie Gorustovich",
+      "PP Factory Status": "Sent",
+      "PP Factory Send Method": "Factory Email",
+      "PP Factory Last Sent At": "03/26/2026 12:03pm",
+      "PP Factory File Names": "141407_ArtworkConfirmation_DG.pdf, 141407_ArtworkConfirmation_DG.ai",
+      "PP Factory File Count": 2,
+      "PP Factory Total Size": 1416100,
+      "PP Factory Next Retry": null,
+      "PP Factory Last Error": null,
+      "Date Modified": "03/26/2026 12:22pm"
+    },
+    {
+      "Order Number": 141388,
+      "Quote Subject": "141388 Nike Pullover Hoodie",
+      "assigned name": "Mac Schailey",
+      "PP Factory Status": "Error",
+      "PP Factory Send Method": "Factory Email",
+      "PP Factory Last Sent At": "03/26/2026 08:14am",
+      "PP Factory File Names": "141388_ArtworkConfirmation_DG.pdf",
+      "PP Factory File Count": 1,
+      "PP Factory Total Size": 843200,
+      "PP Factory Next Retry": "03/26/2026 02:00pm",
+      "PP Factory Last Error": "SMTP timeout: connection refused by relay server after 3 attempts",
+      "Date Modified": "03/26/2026 08:15am"
+    },
+    {
+      "Order Number": 141392,
+      "Quote Subject": "141392 Salesforce Summit Tote",
+      "assigned name": "Greg Burpee",
+      "PP Factory Status": "Pending",
+      "PP Factory Send Method": "Factory Email",
+      "PP Factory Last Sent At": null,
+      "PP Factory File Names": "141392_ArtworkConfirmation_DG.pdf, 141392_ArtworkConfirmation_DG.ai",
+      "PP Factory File Count": 2,
+      "PP Factory Total Size": 2104500,
+      "PP Factory Next Retry": "03/26/2026 01:30pm",
+      "PP Factory Last Error": null,
+      "Date Modified": "03/26/2026 11:45am"
+    }
+  ],
+
+  prodphotos: [
+    { "Name": "141212 CITI Bucket Hat reorder", "User Name": "jlaviolette@poppromos.com", "Production Photo status": "Photos pending client approval", "Production Photo Approval": "Send_to_client_for_approval", "pp pphotos email": "Sent", "pp pphotos date": "03/26/2026 09:11am", "pp pphotos last error": null },
+    { "Name": "140836 Celebrity Cruise Heavyweight Totes", "User Name": "ssmith@poppromos.com", "Production Photo status": "Photos pending client approval", "Production Photo Approval": "Send_to_client_for_approval", "pp pphotos email": "Complete", "pp pphotos date": null, "pp pphotos last error": null },
+    { "Name": "140952 Chicago Fire Malibu", "User Name": "ndunne@poppromos.com", "Production Photo status": "Photos pending client approval", "Production Photo Approval": "Send_to_client_for_approval", "pp pphotos email": "Sent", "pp pphotos date": "03/26/2026 09:16am", "pp pphotos last error": null },
+    { "Name": "141311 RedBull Puffy", "User Name": "jgor@poppromos.com", "Production Photo status": "Partial photos pending client approval", "Production Photo Approval": "Send_to_client_for_approval", "pp pphotos email": "Sent", "pp pphotos date": "03/26/2026 09:20am", "pp pphotos last error": null },
+    { "Name": "141419 Speedee Labs Lanyard reorder", "User Name": "jlaviolette@poppromos.com", "Production Photo status": "Photos pending client approval", "Production Photo Approval": "Send_to_client_for_approval", "pp pphotos email": "Sent", "pp pphotos date": "03/26/2026 09:21am", "pp pphotos last error": null },
+    { "Name": "140587 NBC Leather Luggage Tag", "User Name": "mcolarossi@poppromos.com", "Production Photo status": "Photos pending client approval", "Production Photo Approval": "Send_to_client_for_approval", "pp pphotos email": "Error", "pp pphotos date": "03/26/2026 09:26am", "pp pphotos last error": "Attachment upload failed: file size 18.4MB exceeds gateway limit of 10MB" },
+    { "Name": "140228 Volvo", "User Name": "cporter@poppromos.com", "Production Photo status": "Partial photos pending client approval", "Production Photo Approval": "Send_to_client_for_approval", "pp pphotos email": "Sent", "pp pphotos date": "03/26/2026 09:36am", "pp pphotos last error": null },
+    { "Name": "141418 ACE Loxley RSC Saver Dress Socks", "User Name": "jlaviolette@poppromos.com", "Production Photo status": "Photos pending client approval", "Production Photo Approval": "Send_to_client_for_approval", "pp pphotos email": "Sent", "pp pphotos date": "03/26/2026 09:46am", "pp pphotos last error": null },
+    { "Name": "141137 Pirtek Dress Socks", "User Name": "ndunne@poppromos.com", "Production Photo status": "Photos pending client approval", "Production Photo Approval": "Send_to_client_for_approval", "pp pphotos email": "Sent", "pp pphotos date": "03/26/2026 09:51am", "pp pphotos last error": null },
+    { "Name": "141402 Cantina Pop Pack", "User Name": "mcolarossi@poppromos.com", "Production Photo status": "Partial photos pending client approval", "Production Photo Approval": "Send_to_client_for_approval", "pp pphotos email": "Sent", "pp pphotos date": "03/26/2026 10:51am", "pp pphotos last error": null },
+    { "Name": "141068 Camp Horton Headbands", "User Name": "mschailey@poppromos.com", "Production Photo status": "Partial photos pending client approval", "Production Photo Approval": "Approve_wo_Client", "pp pphotos email": "Sent", "pp pphotos date": "03/26/2026 09:41am", "pp pphotos last error": null }
+  ],
+
+  proofs: [
+    { "Project": "141413 Sunny Fresh Magnet Sheet",               "account assigned user": "Celia Porter",    "Proof Confirmation Stage": "AC Approved", "Account Name": "Business Impact Group",              "pp proofs email": "Opt-Out",  "pp proofs date": "03/26/2026 01:01pm", "Date Modified": "03/26/2026 01:01pm", "pp proofs last error": null, "Send To Client For Review": "I verify the client has approved this proof- DO NOT send" },
+    { "Project": "141204 Davis Gilbert Scrunchie",                 "account assigned user": "Jenah Laviolette","Proof Confirmation Stage": "AC Approved", "Account Name": "Pride Products Distributors",        "pp proofs email": "Complete", "pp proofs date": "03/26/2026 01:00pm", "Date Modified": "03/26/2026 01:00pm", "pp proofs last error": null, "Send To Client For Review": "Send Proof To Client" },
+    { "Project": "141455 Chabot Pennant Reorder",                  "account assigned user": "Mara Colarossi",  "Proof Confirmation Stage": "AC Approved", "Account Name": "Island Advertising",                 "pp proofs email": "Sent",     "pp proofs date": "03/26/2026 12:46pm", "Date Modified": "03/26/2026 12:46pm", "pp proofs last error": null, "Send To Client For Review": "Send Proof To Client" },
+    { "Project": "141446 Darktrace Socks Reorder",                 "account assigned user": "Mara Colarossi",  "Proof Confirmation Stage": "AC Approved", "Account Name": "Orange Planet Promotionals",         "pp proofs email": "Error",    "pp proofs date": "03/26/2026 12:46pm", "Date Modified": "03/26/2026 12:46pm", "pp proofs last error": "Invalid recipient address: bounce code 550 5.1.1 user unknown", "Send To Client For Review": "Send Proof To Client" },
+    { "Project": "141445 UMATTER scrunchie",                       "account assigned user": "Mara Colarossi",  "Proof Confirmation Stage": "AC Approved", "Account Name": "B2B PROMOTIONAL GROUP",               "pp proofs email": "Sent",     "pp proofs date": "03/26/2026 12:31pm", "Date Modified": "03/26/2026 12:31pm", "pp proofs last error": null, "Send To Client For Review": "Send Proof To Client" },
+    { "Project": "141443 Team Nah Dress Socks",                    "account assigned user": "Mara Colarossi",  "Proof Confirmation Stage": "AC Approved", "Account Name": "Sidebar",                            "pp proofs email": "Sent",     "pp proofs date": "03/26/2026 12:26pm", "Date Modified": "03/26/2026 12:26pm", "pp proofs last error": null, "Send To Client For Review": "Send Proof To Client" },
+    { "Project": "141442 Team Nah Petite Socks",                   "account assigned user": "Mara Colarossi",  "Proof Confirmation Stage": "AC Approved", "Account Name": "Sidebar",                            "pp proofs email": "Sent",     "pp proofs date": "03/26/2026 12:21pm", "Date Modified": "03/26/2026 12:21pm", "pp proofs last error": null, "Send To Client For Review": "Send Proof To Client" },
+    { "Project": "141323 Allen Institute Fanny Pack",              "account assigned user": "Sarah Smith",     "Proof Confirmation Stage": "AC Approved", "Account Name": "HALO - General",                     "pp proofs email": "Sent",     "pp proofs date": "03/26/2026 12:06pm", "Date Modified": "03/26/2026 12:06pm", "pp proofs last error": null, "Send To Client For Review": "Send Proof To Client" },
+    { "Project": "141313 Sun River Lanyard SPEC",                  "account assigned user": "",                "Proof Confirmation Stage": "AC Approved", "Account Name": null,                                 "pp proofs email": "Sent",     "pp proofs date": "03/26/2026 12:06pm", "Date Modified": "03/26/2026 12:06pm", "pp proofs last error": null, "Send To Client For Review": "Send Proof To Client" },
+    { "Project": "141451 ZIP Brandana",                            "account assigned user": "Jenah Laviolette","Proof Confirmation Stage": "AC Approved", "Account Name": "North American Corp/NVision",         "pp proofs email": "Sent",     "pp proofs date": "03/26/2026 11:56am", "Date Modified": "03/26/2026 11:56am", "pp proofs last error": null, "Send To Client For Review": "Send Proof To Client" },
+    { "Project": "141438 Grifols Blue Lanyard",                    "account assigned user": "",                "Proof Confirmation Stage": "AC Approved", "Account Name": null,                                 "pp proofs email": "Sent",     "pp proofs date": "03/26/2026 11:56am", "Date Modified": "03/26/2026 11:56am", "pp proofs last error": null, "Send To Client For Review": "Send Proof To Client" },
+    { "Project": "141439 Grifols Black Lanyard",                   "account assigned user": "",                "Proof Confirmation Stage": "AC Approved", "Account Name": null,                                 "pp proofs email": "Sent",     "pp proofs date": "03/26/2026 11:56am", "Date Modified": "03/26/2026 11:56am", "pp proofs last error": null, "Send To Client For Review": "Send Proof To Client" },
+    { "Project": "141450 Hooplandia Lanyard",                      "account assigned user": "Jenah Laviolette","Proof Confirmation Stage": "AC Approved", "Account Name": "TSMGI",                              "pp proofs email": "Sent",     "pp proofs date": "03/26/2026 11:56am", "Date Modified": "03/26/2026 11:56am", "pp proofs last error": null, "Send To Client For Review": "Send Proof To Client" },
+    { "Project": "141444 Fast Signs Lanyards",                     "account assigned user": "Mara Colarossi",  "Proof Confirmation Stage": "AC Approved", "Account Name": "Fast Signs- CA",                     "pp proofs email": "Sent",     "pp proofs date": "03/26/2026 11:51am", "Date Modified": "03/26/2026 11:51am", "pp proofs last error": null, "Send To Client For Review": "Send Proof To Client" },
+    { "Project": "141400 VA Poultry",                              "account assigned user": "Mac Schailey",    "Proof Confirmation Stage": "AC Approved", "Account Name": "American Solutions for Business",    "pp proofs email": "Complete", "pp proofs date": "03/26/2026 11:45am", "Date Modified": "03/26/2026 11:45am", "pp proofs last error": null, "Send To Client For Review": "Send Proof To Client" },
+    { "Project": "141437 Vetra Tennis Toy",                        "account assigned user": "Celia Porter",    "Proof Confirmation Stage": "AC Approved", "Account Name": "Blink Marketing, Inc.",               "pp proofs email": "Sent",     "pp proofs date": "03/26/2026 10:55am", "Date Modified": "03/26/2026 10:55am", "pp proofs last error": null, "Send To Client For Review": "Send Proof To Client" },
+    { "Project": "141435 Bronson Difference Maker Midi Crew Socks","account assigned user": "Mac Schailey",    "Proof Confirmation Stage": "AC Approved", "Account Name": "Creative Studio Promotions",         "pp proofs email": "Sent",     "pp proofs date": "03/26/2026 10:31am", "Date Modified": "03/26/2026 10:31am", "pp proofs last error": null, "Send To Client For Review": "Send Proof To Client" },
+    { "Project": "141433 Apex Club Huntington Bank Compression Packing Cube Set", "account assigned user": "Mac Schailey", "Proof Confirmation Stage": "AC Approved", "Account Name": "American Solutions for Business - 2", "pp proofs email": "Sent", "pp proofs date": "03/26/2026 10:31am", "Date Modified": "03/26/2026 10:31am", "pp proofs last error": null, "Send To Client For Review": "Send Proof To Client" },
+    { "Project": "141436 Volkswagen LVL Motel Keychain",           "account assigned user": "Sarah Smith",     "Proof Confirmation Stage": "AC Approved", "Account Name": "HALO - General",                     "pp proofs email": "Sent",     "pp proofs date": "03/26/2026 10:15am", "Date Modified": "03/26/2026 10:15am", "pp proofs last error": null, "Send To Client For Review": "Send Proof To Client" },
+    { "Project": "141426 Gladwell Ortho DSSSPM",                   "account assigned user": "Jenah Laviolette","Proof Confirmation Stage": "AC Approved", "Account Name": "Stran & Company Inc",                 "pp proofs email": "Sent",     "pp proofs date": "03/26/2026 10:10am", "Date Modified": "03/26/2026 10:10am", "pp proofs last error": null, "Send To Client For Review": "Send Proof To Client" },
+    { "Project": "141361 DD's Shorti Crews",                       "account assigned user": "Sarah Smith",     "Proof Confirmation Stage": "AC Approved", "Account Name": "HALO - Axis Promotions - NYC",        "pp proofs email": "Sent",     "pp proofs date": "03/26/2026 10:06am", "Date Modified": "03/26/2026 10:06am", "pp proofs last error": null, "Send To Client For Review": "Send Proof To Client" },
+    { "Project": "141434 Vi Compression Socks",                    "account assigned user": "Mac Schailey",    "Proof Confirmation Stage": "AC Approved", "Account Name": "Summit Group, LLC",                  "pp proofs email": "Sent",     "pp proofs date": "03/26/2026 10:01am", "Date Modified": "03/26/2026 10:01am", "pp proofs last error": null, "Send To Client For Review": "Send Proof To Client" },
+    { "Project": "141432 Envu Barricor USA DTG Socks spec",        "account assigned user": "Jenah Laviolette","Proof Confirmation Stage": "AC Approved", "Account Name": "HH Global",                          "pp proofs email": "Sent",     "pp proofs date": "03/26/2026 10:01am", "Date Modified": "03/26/2026 10:01am", "pp proofs last error": null, "Send To Client For Review": "Send Proof To Client" },
+    { "Project": "141015 Abbvie DW Lanyard",                       "account assigned user": "Jenah Laviolette","Proof Confirmation Stage": "AC Approved", "Account Name": "Overture Premiums & Promotions",      "pp proofs email": "Sent",     "pp proofs date": "03/26/2026 09:51am", "Date Modified": "03/26/2026 09:51am", "pp proofs last error": null, "Send To Client For Review": "Send Proof To Client" },
+    { "Project": "141405 Dexcom Scrunchie",                        "account assigned user": "Mara Colarossi",  "Proof Confirmation Stage": "AC Approved", "Account Name": "MadeToOrder, Inc.",                  "pp proofs email": "Sent",     "pp proofs date": "03/26/2026 09:16am", "Date Modified": "03/26/2026 09:16am", "pp proofs last error": null, "Send To Client For Review": "Send Proof To Client" },
+    { "Project": "141430 Iowa HealthCare CFAS",                    "account assigned user": "",                "Proof Confirmation Stage": "AC Approved", "Account Name": null,                                 "pp proofs email": "Sent",     "pp proofs date": "03/26/2026 09:05am", "Date Modified": "03/26/2026 09:06am", "pp proofs last error": null, "Send To Client For Review": "Send Proof To Client" }
+  ]
+};
+
+// ===================================================================
+// FETCH FROM SUGAR PROXY
+// Adjust the endpoint path to match how your sugar-proxy is set up.
+// Common pattern: GET /api/v8/Reports/{id}/records
+// ===================================================================
+async function fetchReport(reportId, key) {
+
+  const url = `${DASHBOARD_WORKER_BASE}/proxy-report/${reportId}`;
+  const res = await fetch(url, {
+    headers: { "Content-Type": "application/json" }
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status} - ${res.statusText}`);
+  const json = await res.json();
+  // Sugar rows/columns reports return { records: [...] }
+  return json.records || json.data || [];
+}
+
+// ===================================================================
+// ERROR DETECTION HELPERS
+// A row is flagged if any field whose key contains "error" has a value,
+// OR if a status/email field contains "error" (case-insensitive).
+// ===================================================================
+function rowHasError(record) {
+  return Object.entries(record).some(([k, v]) => {
+    if (!v) return false;
+    const keyIsError = /error/i.test(k);
+    const valIsError = typeof v === "string" && /error/i.test(v);
+    return keyIsError || valIsError;
+  });
+}
+
+function getErrorFields(record) {
+  return Object.entries(record)
+    .filter(([k, v]) => v && (/error/i.test(k) || (typeof v === "string" && /error/i.test(v))))
+    .map(([k, v]) => `${k}: ${v}`);
+}
+
+// ===================================================================
+// STATUS PILL HELPER
+// ===================================================================
+function statusPill(value) {
+  if (!value) return `<span class="pill pill-default">-</span>`;
+  const v = value.toLowerCase();
+  if (v === "sent")     return `<span class="pill pill-sent">${value}</span>`;
+  if (v === "complete" || v === "completed") return `<span class="pill pill-complete">${value}</span>`;
+  if (/error|fail/i.test(v)) return `<span class="pill pill-error">${value}</span>`;
+  if (/pend|retry|wait/i.test(v)) return `<span class="pill pill-pending">${value}</span>`;
+  return `<span class="pill pill-default">${value}</span>`;
+}
+
+function fmtSize(bytes) {
+  if (!bytes && bytes !== 0) return "-";
+  const n = parseInt(bytes, 10);
+  if (isNaN(n)) return bytes;
+  if (n < 1024) return n + " B";
+  if (n < 1048576) return (n / 1024).toFixed(1) + " KB";
+  return (n / 1048576).toFixed(1) + " MB";
+}
+
+function esc(v) {
+  if (v == null || v === "") return "-";
+  return String(v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+}
+
+// ===================================================================
+// RENDER FUNCTIONS - one per tab
+// Sugar rows/columns report field names must match what the proxy
+// returns. Update the field key lookups below to match your actual
+// Sugar field names (shown in the CSV columns).
+// ===================================================================
+
+function renderProdFiles(rows) {
+  const tbody = document.getElementById("tbody-prodfiles");
+  const sorted = partitionRows(rows);
+  let html = "";
+
+  if (sorted.errors.length) {
+    html += `<tr><td colspan="12" class="section-label">Errors (${sorted.errors.length})</td></tr>`;
+    html += sorted.errors.map(r => rowHtmlProdFiles(r, true)).join("");
+  }
+  if (sorted.ok.length) {
+    html += `<tr><td colspan="12" class="section-label ok-section">OK (${sorted.ok.length})</td></tr>`;
+    html += sorted.ok.map(r => rowHtmlProdFiles(r, false)).join("");
+  }
+  tbody.innerHTML = html || `<tr><td colspan="12" class="state-msg">No records</td></tr>`;
+  renderStats("prodfiles", rows, sorted.errors.length);
+  updateBadge("prodfiles", rows.length, sorted.errors.length);
+}
+
+function rowHtmlProdFiles(r, isErr) {
+  const cls = isErr ? " class=\"row-error\"" : "";
+  const err = esc(r["PP Factory Last Error"] || r["pp_factory_last_error"]);
+  return `<tr${cls}>
+    <td>${esc(r["Order Number"] || r["order_number"])}</td>
+    <td>${esc(r["Quote Subject"] || r["quote_subject"])}</td>
+    <td>${esc(r["assigned name"] || r["assigned_name"])}</td>
+    <td>${statusPill(r["PP Factory Status"] || r["pp_factory_status"])}</td>
+    <td>${statusPill(r["PP Factory Send Method"] || r["pp_factory_send_method"])}</td>
+    <td>${esc(r["PP Factory Last Sent At"] || r["pp_factory_last_sent_at"])}</td>
+    <td style="font-size:.72rem;">${esc(r["PP Factory File Names"] || r["pp_factory_file_names"])}</td>
+    <td>${esc(r["PP Factory File Count"] || r["pp_factory_file_count"])}</td>
+    <td>${fmtSize(r["PP Factory Total Size"] || r["pp_factory_total_size"])}</td>
+    <td>${esc(r["PP Factory Next Retry"] || r["pp_factory_next_retry"])}</td>
+    <td class="${err !== "-" ? "error-cell" : ""}">${err}</td>
+    <td>${esc(r["Date Modified"] || r["date_modified"])}</td>
+  </tr>`;
+}
+
+function renderProdPhotos(rows) {
+  const tbody = document.getElementById("tbody-prodphotos");
+  const sorted = partitionRows(rows);
+  let html = "";
+
+  if (sorted.errors.length) {
+    html += `<tr><td colspan="7" class="section-label">Errors (${sorted.errors.length})</td></tr>`;
+    html += sorted.errors.map(r => rowHtmlProdPhotos(r, true)).join("");
+  }
+  if (sorted.ok.length) {
+    html += `<tr><td colspan="7" class="section-label ok-section">OK (${sorted.ok.length})</td></tr>`;
+    html += sorted.ok.map(r => rowHtmlProdPhotos(r, false)).join("");
+  }
+  tbody.innerHTML = html || `<tr><td colspan="7" class="state-msg">No records</td></tr>`;
+  renderStats("prodphotos", rows, sorted.errors.length);
+  updateBadge("prodphotos", rows.length, sorted.errors.length);
+}
+
+function rowHtmlProdPhotos(r, isErr) {
+  const cls = isErr ? " class=\"row-error\"" : "";
+  const err = esc(r["pp pphotos last error"] || r["pp_pphotos_last_error"]);
+  return `<tr${cls}>
+    <td>${esc(r["Name"] || r["name"])}</td>
+    <td style="font-size:.72rem;">${esc(r["User Name"] || r["user_name"])}</td>
+    <td>${esc(r["Production Photo status"] || r["production_photo_status"])}</td>
+    <td>${esc(r["Production Photo Approval"] || r["production_photo_approval"])}</td>
+    <td>${statusPill(r["pp pphotos email"] || r["pp_pphotos_email"])}</td>
+    <td>${esc(r["pp pphotos date"] || r["pp_pphotos_date"])}</td>
+    <td class="${err !== "-" ? "error-cell" : ""}">${err}</td>
+  </tr>`;
+}
+
+function renderProofs(rows) {
+  const tbody = document.getElementById("tbody-proofs");
+  const sorted = partitionRows(rows);
+  let html = "";
+
+  if (sorted.errors.length) {
+    html += `<tr><td colspan="9" class="section-label">Errors (${sorted.errors.length})</td></tr>`;
+    html += sorted.errors.map(r => rowHtmlProofs(r, true)).join("");
+  }
+  if (sorted.ok.length) {
+    html += `<tr><td colspan="9" class="section-label ok-section">OK (${sorted.ok.length})</td></tr>`;
+    html += sorted.ok.map(r => rowHtmlProofs(r, false)).join("");
+  }
+  tbody.innerHTML = html || `<tr><td colspan="9" class="state-msg">No records</td></tr>`;
+  renderStats("proofs", rows, sorted.errors.length);
+  updateBadge("proofs", rows.length, sorted.errors.length);
+}
+
+function rowHtmlProofs(r, isErr) {
+  const cls = isErr ? " class=\"row-error\"" : "";
+  const err = esc(r["pp proofs last error"] || r["pp_proofs_last_error"]);
+  return `<tr${cls}>
+    <td>${esc(r["Project"] || r["project"])}</td>
+    <td>${esc(r["Account Name"] || r["account_name"])}</td>
+    <td>${esc(r["account assigned user"] || r["account_assigned_user"])}</td>
+    <td>${esc(r["Proof Confirmation Stage"] || r["proof_confirmation_stage"])}</td>
+    <td style="font-size:.72rem;">${esc(r["Send To Client For Review"] || r["send_to_client_for_review"])}</td>
+    <td>${statusPill(r["pp proofs email"] || r["pp_proofs_email"])}</td>
+    <td>${esc(r["pp proofs date"] || r["pp_proofs_date"])}</td>
+    <td>${esc(r["Date Modified"] || r["date_modified"])}</td>
+    <td class="${err !== "-" ? "error-cell" : ""}">${err}</td>
+  </tr>`;
+}
+
+// ===================================================================
+// SHARED HELPERS
+// ===================================================================
+function partitionRows(rows) {
+  const errors = rows.filter(rowHasError);
+  const ok     = rows.filter(r => !rowHasError(r));
+  return { errors, ok };
+}
+
+function renderStats(key, rows, errorCount) {
+  const el = document.getElementById(`stats-${key}`);
+  el.innerHTML = `
+    <div class="stat-chip">
+      <span class="label">Total Records</span>
+      <span class="value">${rows.length}</span>
+    </div>
+    <div class="stat-chip ${errorCount > 0 ? "errors" : ""}">
+      <span class="label">Errors</span>
+      <span class="value">${errorCount}</span>
+    </div>
+    <div class="stat-chip">
+      <span class="label">OK</span>
+      <span class="value">${rows.length - errorCount}</span>
+    </div>
+  `;
+}
+
+function updateBadge(key, total, errors) {
+  const badge = document.getElementById(`badge-${key}`);
+  if (errors > 0) {
+    badge.textContent = errors;
+    badge.className = "badge has-errors";
+  } else {
+    badge.textContent = "0";
+    badge.className = "badge zero";
+  }
+}
+
+function setLoading(key, isLoading, err = null) {
+  const loadEl = document.getElementById(`loading-${key}`);
+  const tblEl  = document.getElementById(`table-${key}`);
+
+  if (isLoading) {
+    loadEl.innerHTML = `<div class="spinner"></div><br/>Loading ${REPORTS[key].label}...`;
+    loadEl.className = "state-msg";
+    loadEl.style.display = "";
+    tblEl.style.display = "none";
+  } else if (err) {
+    loadEl.innerHTML = `Error loading ${REPORTS[key].label}:<br/><strong>${esc(err)}</strong>`;
+    loadEl.className = "state-msg is-error";
+    loadEl.style.display = "";
+    tblEl.style.display = "none";
+  } else {
+    loadEl.style.display = "none";
+    tblEl.style.display = "";
+  }
+}
+
+// ===================================================================
+// SORT
+// ===================================================================
+function sortTable(key, colIndex) {
+  const s = state[key];
+  if (s.sortCol === colIndex) {
+    s.sortDir *= -1;
+  } else {
+    s.sortCol = colIndex;
+    s.sortDir = 1;
+  }
+
+  // Update th indicators
+  const table = document.getElementById(`table-${key}`);
+  table.querySelectorAll("th").forEach((th, i) => {
+    th.classList.remove("sorted-asc", "sorted-desc");
+    if (i === colIndex) {
+      th.classList.add(s.sortDir === 1 ? "sorted-asc" : "sorted-desc");
+    }
+  });
+
+  // Re-render with sort applied (errors still bubble to top)
+  const { errors, ok } = partitionRows(s.rows);
+  const sortFn = (a, b) => {
+    const cols = Object.values(a);
+    const aVal = String(Object.values(a)[colIndex] || "");
+    const bVal = String(Object.values(b)[colIndex] || "");
+    return aVal.localeCompare(bVal, undefined, { numeric: true }) * s.sortDir;
+  };
+  errors.sort(sortFn);
+  ok.sort(sortFn);
+
+  const renderFns = { prodfiles: renderProdFiles, prodphotos: renderProdPhotos, proofs: renderProofs };
+  renderFns[key]([...errors, ...ok]);
+}
+
+// ===================================================================
+// LOAD ONE REPORT
+// ===================================================================
+async function loadReport(key) {
+  setLoading(key, true);
+  try {
+    const rows = await fetchReport(REPORTS[key].reportId, key);
+    state[key].rows = rows;
+    const renderFns = { prodfiles: renderProdFiles, prodphotos: renderProdPhotos, proofs: renderProofs };
+    renderFns[key](rows);
+    setLoading(key, false);
+    // Trigger auto-clear check after any report updates
+    if (typeof autoClearFromReports === "function") autoClearFromReports();
+  } catch (e) {
+    console.error(`[${key}]`, e);
+    setLoading(key, false, e.message);
+    updateBadge(key, "!", 1);
+  }
+}
+
+// ===================================================================
+// REFRESH ALL
+// ===================================================================
+async function refreshAll() {
+  const btn = document.getElementById("refresh-btn");
+  btn.disabled = true;
+  btn.textContent = "Refreshing...";
+
+  await Promise.allSettled([
+    loadReport("prodfiles"),
+    loadReport("prodphotos"),
+    loadReport("proofs"),
+  ]);
+
+  const now = new Date();
+  document.getElementById("last-updated").textContent =
+    "Last updated: " + now.toLocaleTimeString();
+
+  btn.disabled = false;
+  btn.textContent = "Refresh";
+}
+
+// ===================================================================
+// AUTO-REFRESH EVERY 5 MINUTES
+// ===================================================================
+const AUTO_REFRESH_MS = 15 * 60 * 1000;
+setInterval(refreshAll, AUTO_REFRESH_MS);
+
+// ===================================================================
+// INIT
+// ===================================================================
+// ===================================================================
+// ERROR FEED - SEED DATA (preview mode)
+// Includes deliberate duplicates to demo dedup + repeat counter.
+// Remove SEED_EVENTS and the preview block in fetchFeedEvents() when live.
+// ===================================================================
+const SEED_EVENTS = [
+  // 141388 - 3 identical sweeps from production-process (should collapse to 1 card x3)
+  { id:"evt_001a", worker:"production-process", timestamp: new Date(Date.now() -  4*60000).toISOString(), order_number:"141388", error_message:"SMTP timeout: connection refused by relay server after 3 attempts", sugar_record_id:"9a2351f6-2861-11f1-a10e-e7b8e3b5160a" },
+  { id:"evt_001b", worker:"production-process", timestamp: new Date(Date.now() -  6*60000).toISOString(), order_number:"141388", error_message:"SMTP timeout: connection refused by relay server after 3 attempts", sugar_record_id:"9a2351f6-2861-11f1-a10e-e7b8e3b5160a" },
+  { id:"evt_001c", worker:"production-process", timestamp: new Date(Date.now() -  8*60000).toISOString(), order_number:"141388", error_message:"SMTP timeout: connection refused by relay server after 3 attempts", sugar_record_id:"9a2351f6-2861-11f1-a10e-e7b8e3b5160a" },
+  // 140587 - 2 identical sweeps from production-photos (should collapse to 1 card x2)
+  { id:"evt_002a", worker:"production-photos",  timestamp: new Date(Date.now() - 11*60000).toISOString(), order_number:"140587", error_message:"Attachment upload failed: file size 18.4MB exceeds gateway limit of 10MB", sugar_record_id:"7672bd86-1426-11f1-8914-99714d5a4425" },
+  { id:"evt_002b", worker:"production-photos",  timestamp: new Date(Date.now() - 16*60000).toISOString(), order_number:"140587", error_message:"Attachment upload failed: file size 18.4MB exceeds gateway limit of 10MB", sugar_record_id:"7672bd86-1426-11f1-8914-99714d5a4425" },
+  // 141446 - single error from proof-process
+  { id:"evt_003",  worker:"proof-process",      timestamp: new Date(Date.now() - 23*60000).toISOString(), order_number:"141446", error_message:"Invalid recipient address: bounce code 550 5.1.1 user unknown",                 sugar_record_id:"0f2f6d50-292e-11f1-b0c7-139be0189a65" },
+  // 141201 - single error from production-process
+  { id:"evt_004",  worker:"production-process", timestamp: new Date(Date.now() - 58*60000).toISOString(), order_number:"141201", error_message:"Sugar API returned 401 Unauthorized - token may have expired",                    sugar_record_id:"a1b2c3d4-0000-11f1-0000-000000000001" },
+  // 141119 - 2 sweeps from proof-process, different message (should NOT collapse)
+  { id:"evt_005a", worker:"proof-process",      timestamp: new Date(Date.now() - 97*60000).toISOString(), order_number:"141119", error_message:"Dropbox upload failed: insufficient storage quota",                              sugar_record_id:"a1b2c3d4-0000-11f1-0000-000000000002" },
+  { id:"evt_005b", worker:"proof-process",      timestamp: new Date(Date.now() -102*60000).toISOString(), order_number:"141119", error_message:"Sugar API timeout fetching case record",                                         sugar_record_id:"a1b2c3d4-0000-11f1-0000-000000000002" },
+  // 140998 - single error
+  { id:"evt_006",  worker:"production-photos",  timestamp: new Date(Date.now() -134*60000).toISOString(), order_number:"140998", error_message:"Case not found in Sugar - record may have been deleted or merged",               sugar_record_id:"a1b2c3d4-0000-11f1-0000-000000000003" },
+];
+
+// ===================================================================
+// FEED STATE
+// feedState.dismissed  = Set of "orderNumber" strings cleared by user or auto-clear
+// feedState.dedupedGroups = computed from raw events, used for render
+// ===================================================================
+feedState.dismissed = new Set(); // persists across polls within session
+
+// ===================================================================
+// DEDUPLICATION
+// Groups raw events by (worker + order_number + error_message).
+// Returns array of group objects sorted newest-first, with a count.
+// ===================================================================
+function dedupeEvents(events) {
+  const map = new Map();
+  for (const evt of events) {
+    const key = `${evt.worker}||${evt.order_number}||${evt.error_message}`;
+    if (!map.has(key)) {
+      map.set(key, { ...evt, count: 1, firstSeen: evt.timestamp, lastSeen: evt.timestamp });
+    } else {
+      const g = map.get(key);
+      g.count++;
+      // keep the most recent timestamp as lastSeen, earliest as firstSeen
+      if (evt.timestamp > g.lastSeen)  g.lastSeen  = evt.timestamp;
+      if (evt.timestamp < g.firstSeen) g.firstSeen = evt.timestamp;
+    }
+  }
+  // Sort newest lastSeen first
+  return Array.from(map.values()).sort((a, b) => b.lastSeen.localeCompare(a.lastSeen));
+}
+
+// ===================================================================
+// AUTO-CLEAR: called after each report refresh
+// Checks current report rows against active error groups and dismisses
+// any order numbers that now show a clean status.
+//
+// Rules:
+//   production-process  -> clear if PP Factory Last Error is blank/null
+//   production-photos   -> clear if pp pphotos email is Sent or Complete
+//   proofs              -> clear if pp proofs email is Sent, Complete, or Opt-Out
+// ===================================================================
+function autoClearFromReports() {
+  const clearedOrders = new Set();
+
+  // --- production-process ---
+  for (const row of (state.prodfiles.rows || [])) {
+    const orderNum = String(row["Order Number"] || row["order_number"] || "").trim();
+    const lastErr  = row["PP Factory Last Error"] || row["pp_factory_last_error"];
+    if (orderNum && !lastErr) clearedOrders.add(orderNum);
+  }
+
+  // --- production-photos ---
+  const photoOkStatuses = new Set(["sent", "complete"]);
+  for (const row of (state.prodphotos.rows || [])) {
+    // Name field starts with order number e.g. "141212 CITI Bucket Hat..."
+    const name     = String(row["Name"] || row["name"] || "").trim();
+    const orderNum = name.split(" ")[0];
+    const emailVal = String(row["pp pphotos email"] || row["pp_pphotos_email"] || "").toLowerCase();
+    if (orderNum && photoOkStatuses.has(emailVal)) clearedOrders.add(orderNum);
+  }
+
+  // --- proofs ---
+  const proofsOkStatuses = new Set(["sent", "complete", "opt-out"]);
+  for (const row of (state.proofs.rows || [])) {
+    const project  = String(row["Project"] || row["project"] || "").trim();
+    const orderNum = project.split(" ")[0].replace(/\s/g, "");
+    const emailVal = String(row["pp proofs email"] || row["pp_proofs_email"] || "").toLowerCase();
+    if (orderNum && proofsOkStatuses.has(emailVal)) clearedOrders.add(orderNum);
+  }
+
+  if (!clearedOrders.size) return;
+
+  // Find any active (non-dismissed) groups that match a cleared order
+  const activeGroups = feedState.dedupedGroups || [];
+  const newlyCleared = activeGroups.filter(g =>
+    clearedOrders.has(g.order_number) && !feedState.dismissed.has(g.order_number)
+  );
+
+  if (!newlyCleared.length) return;
+
+  // Animate them out then add to dismissed
+  newlyCleared.forEach(g => {
+    const card = document.querySelector(`.feed-card[data-order="${g.order_number}"]`);
+    if (card) card.classList.add("clearing");
+  });
+
+  setTimeout(() => {
+    newlyCleared.forEach(g => feedState.dismissed.add(g.order_number));
+    renderFeed();
+    updateFeedBadge();
+    showAutoClearToast(newlyCleared.map(g => g.order_number));
+  }, 420);
+}
+
+function showAutoClearToast(orderNums) {
+  const list = document.getElementById("feed-list");
+  const toast = document.createElement("div");
+  toast.className = "feed-auto-clear-toast";
+  toast.textContent = `✓ Auto-cleared ${orderNums.length} resolved order${orderNums.length > 1 ? "s" : ""}: ${orderNums.map(n => "#" + n).join(", ")}`;
+  list.prepend(toast);
+  setTimeout(() => toast.remove(), 4000);
+}
+
+// ===================================================================
+// MANUAL CLEAR by order number
+// ===================================================================
+function clearOrderErrors(orderNumber) {
+  const card = document.querySelector(`.feed-card[data-order="${orderNumber}"]`);
+  if (card) card.classList.add("clearing");
+  setTimeout(() => {
+    feedState.dismissed.add(String(orderNumber));
+    renderFeed();
+    updateFeedBadge();
+    fetch(`${DASHBOARD_WORKER_BASE}/clear/order/${orderNumber}`, { method: "POST" }).catch(e => console.error("Clear API Error:", e));
+  }, 420);
+}
+
+// ===================================================================
+// FEED - FETCH EVENTS
+// ===================================================================
+async function fetchFeedEvents() {
+  const res = await fetch(`${DASHBOARD_WORKER_BASE}/events`);
+  if (!res.ok) throw new Error(`Feed fetch failed: ${res.status}`);
+  return await res.json();
+}
+
+// ===================================================================
+// FEED - RENDER
+// ===================================================================
+const WORKER_ICONS = {
+  "production-process": "🏭",
+  "proof-process":      "🖨️",
+  "production-photos":  "📷",
+};
+
+function fmtRelativeTime(isoString) {
+  const diff = Math.floor((Date.now() - new Date(isoString)) / 1000);
+  if (diff < 60)    return `${diff}s ago`;
+  if (diff < 3600)  return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  return new Date(isoString).toLocaleDateString();
+}
+
+function sugarUrl(recordId) {
+  return `https://poppromos.sugarondemand.com/index.php?module=Cases&action=DetailView&record=${recordId}`;
+}
+
+function renderFeed() {
+  const list = document.getElementById("feed-list");
+
+  // Filter out dismissed orders, apply worker filter
+  let groups = (feedState.dedupedGroups || []).filter(g => !feedState.dismissed.has(g.order_number));
+  if (feedState.filter !== "all") {
+    groups = groups.filter(g => g.worker === feedState.filter);
+  }
+
+  if (!groups.length) {
+    const msg = feedState.filter === "all"
+      ? "No active errors."
+      : `No active errors from <strong>${feedState.filter}</strong>.`;
+    list.innerHTML = `<div class="feed-empty"><div class="feed-empty-icon">✅</div>${msg}</div>`;
+    return;
+  }
+
+  list.innerHTML = groups.map(g => {
+    const workerClass = `worker-${g.worker}`;
+    const tagClass    = `tag-${g.worker}`;
+    const icon        = WORKER_ICONS[g.worker] || "⚠️";
+    const orderLink   = g.sugar_record_id
+      ? `<a href="${sugarUrl(g.sugar_record_id)}" target="_blank">#${esc(g.order_number)}</a>`
+      : `#${esc(g.order_number)}`;
+    const repeatBadge = g.count > 1
+      ? `<span class="feed-repeat-badge">↻ ${g.count}x</span>`
+      : "";
+
+    return `
+      <div class="feed-card ${workerClass}" data-order="${esc(g.order_number)}">
+        <div class="feed-card-icon">${icon}</div>
+        <div class="feed-card-body">
+          <div class="feed-card-header">
+            <span class="feed-worker-tag ${tagClass}">${esc(g.worker)}</span>
+            <span class="feed-order">${orderLink}</span>
+            ${repeatBadge}
+          </div>
+          <div class="feed-error-msg">${esc(g.error_message)}</div>
+        </div>
+        <div class="feed-card-meta">
+          <span class="feed-card-ts" data-order="${esc(g.order_number)}">${fmtRelativeTime(g.lastSeen)}</span>
+          <button class="feed-clear-btn" onclick="clearOrderErrors('${esc(g.order_number)}')">
+            Clear #${esc(g.order_number)}
+          </button>
+        </div>
+      </div>`;
+  }).join("");
+}
+
+function updateFeedBadge() {
+  const badge   = document.getElementById("badge-feed");
+  const active  = (feedState.dedupedGroups || []).filter(g => !feedState.dismissed.has(g.order_number));
+  const count   = active.length;
+  if (count > 0) {
+    badge.textContent = count;
+    badge.className   = "badge has-errors";
+  } else {
+    badge.textContent = "0";
+    badge.className   = "badge zero";
+  }
+}
+
+// ===================================================================
+// FEED - POLL (every 15s)
+// ===================================================================
+const FEED_POLL_MS = 15000;
+
+async function pollFeed() {
+  const dot   = document.getElementById("feed-live-dot");
+  const label = document.getElementById("feed-live-label-text");
+  try {
+    const raw = await fetchFeedEvents();
+    feedState.dedupedGroups = dedupeEvents(raw);
+    feedState.isLive = true;
+    dot.className     = "feed-live-dot";
+    label.textContent = "Live";
+    renderFeed();
+    updateFeedBadge();
+  } catch (e) {
+    feedState.isLive  = false;
+    dot.className     = "feed-live-dot paused";
+    label.textContent = "Disconnected";
+    console.error("[feed]", e);
+  }
+}
+
+function startFeedPoll() {
+  pollFeed();
+  feedState.pollTimer = setInterval(pollFeed, FEED_POLL_MS);
+}
+
+// ===================================================================
+// FEED - FILTER
+// ===================================================================
+function setFeedFilter(btn) {
+  document.querySelectorAll(".feed-filter-btn").forEach(b => b.classList.remove("active"));
+  btn.classList.add("active");
+  feedState.filter = btn.dataset.worker;
+  renderFeed();
+}
+
+refreshAll();
+startFeedPoll();
+</script>
+</body>
+</html>

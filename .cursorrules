@@ -1,0 +1,5 @@
+* Use standard JavaScript conventions.
+* For the Cloudflare worker (`dashboard-worker.js`), use the fetch listener model.
+* Keep `index.html` contained in the same folder and handle static assets minimally. 
+* Do not deploy silently. Always ask for permission using `wrangler deploy`.
+* Provide instructions to update `worker_operation.md` whenever the backend architecture changes.

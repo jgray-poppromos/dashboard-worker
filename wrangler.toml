@@ -1,0 +1,22 @@
+name = "dashboard-worker"
+main = "dashboard-worker.js"
+compatibility_date = "2024-04-02"
+
+# Package text files so we can import index.html natively
+rules = [
+  { type = "Text", globs = ["**/*.html"], fallthrough = true }
+]
+
+[[kv_namespaces]]
+binding = "DASHBOARD_KV"
+id = "9216d3588ee84bd7b9244a84214b0482"
+
+[observability]
+enabled = true
+head_sampling_rate = 1
+
+[vars]
+# No plaintext vars
+
+# Secrets (set via wrangler secret put):
+# - WEBHOOK_SECRET
