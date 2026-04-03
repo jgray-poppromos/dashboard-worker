@@ -6,21 +6,65 @@ import htmlPage from './index.html';
  */
 function isAuthorized(request, env) {
   const authHeader = request.headers.get('Authorization');
-  if (!authHeader) return false;
+  if (!authHeader) {
+    console.log('[Auth] Missing Authorization header');
+    return false;
+  }
 
   const [scheme, encoded] = authHeader.split(' ');
-  if (scheme !== 'Basic' || !encoded) return false;
+  if (scheme !== 'Basic' || !encoded) {
+    console.log('[Auth] Invalid scheme or missing token');
+    return false;
+  }
 
   try {
     const decoded = atob(encoded);
-    const [user, pass] = decoded.split(':');
+    const colonIndex = decoded.indexOf(':');
+    if (colonIndex === -1) return false;
+    
+    const user = decoded.slice(0, colonIndex);
+    const pass = decoded.slice(colonIndex + 1);
+    
     const expectedUser = env.DASHBOARD_USERNAME || 'admin';
     const expectedPass = env.DASHBOARD_PASSWORD;
 
-    return user === expectedUser && pass === expectedPass;
+    if (!expectedPass) {
+      console.warn('[Auth] DASHBOARD_PASSWORD secret is not set!');
+      return false;
+    }
+
+    const authorized = user === expectedUser && pass === expectedPass;
+    if (!authorized) {
+      console.log(`[Auth] Failed for user: ${user}`);
+    }
+    return authorized;
   } catch (e) {
+    console.error(`[Auth] Decoding error: ${e.message}`);
     return false;
   }
+}
+
+/**
+ * Utility to identify if an error is a duplicate of a recent one.
+ * Reduces dashboard clutter from retrying workers.
+ */
+async function isDuplicateError(kv, body) {
+  // Check the last 15 keys to see if this error was recently logged
+  const list = await kv.list({ prefix: 'event:', limit: 15 });
+  // body.error_message or body.message
+  const msg = body.error_message || body.message || 'Unknown error occurred';
+  const worker = body.worker || 'unknown';
+  const orderNum = body.order_number || 'unknown';
+
+  const fetchPromises = list.keys.map(k => kv.get(k.name, 'json'));
+  const values = await Promise.all(fetchPromises);
+
+  return values.some(v => 
+    v && 
+    v.order_number === orderNum && 
+    v.worker === worker && 
+    v.error_message === msg
+  );
 }
 
 export default {
@@ -80,6 +124,12 @@ export default {
             await clearOrder(env.DASHBOARD_KV, orderNum);
             return new Response(JSON.stringify({ success: true, cleared: true, order_number: orderNum }), { headers: corsHeaders });
           }
+        }
+
+        // DEDUPLICATION CHECK
+        // If we've seen this exact error from this worker recently, skip storing it again
+        if (await isDuplicateError(env.DASHBOARD_KV, body)) {
+          return new Response(JSON.stringify({ success: true, duplicate: true, message: 'Already logged recently' }), { headers: corsHeaders });
         }
 
         // STORE ERROR EVENT
