@@ -1,5 +1,28 @@
 import htmlPage from './index.html';
 
+/**
+ * Validates Basic Auth credentials.
+ * Expects Authorization: Basic <base64(user:pass)>
+ */
+function isAuthorized(request, env) {
+  const authHeader = request.headers.get('Authorization');
+  if (!authHeader) return false;
+
+  const [scheme, encoded] = authHeader.split(' ');
+  if (scheme !== 'Basic' || !encoded) return false;
+
+  try {
+    const decoded = atob(encoded);
+    const [user, pass] = decoded.split(':');
+    const expectedUser = env.DASHBOARD_USERNAME || 'admin';
+    const expectedPass = env.DASHBOARD_PASSWORD;
+
+    return user === expectedUser && pass === expectedPass;
+  } catch (e) {
+    return false;
+  }
+}
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
@@ -8,11 +31,24 @@ export default {
     const corsHeaders = {
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, X-Webhook-Secret',
+      'Access-Control-Allow-Headers': 'Content-Type, X-Webhook-Secret, Authorization',
     };
 
     if (request.method === 'OPTIONS') {
       return new Response(null, { headers: corsHeaders });
+    }
+
+    // --- PROTECTED ENDPOINTS (Dashboard & APIs) ---
+    // Webhooks are checked within their specific route and use X-Webhook-Secret.
+    // All other routes (/, /events, /proxy-repo, /clear) require Basic Auth.
+    if (url.pathname !== '/webhook' && !isAuthorized(request, env)) {
+      return new Response('Unauthorized', {
+        status: 401,
+        headers: {
+          ...corsHeaders,
+          'WWW-Authenticate': 'Basic realm="Worker Automation Dashboard"',
+        }
+      });
     }
 
     // --- GET / (Serve HTML shell) ---

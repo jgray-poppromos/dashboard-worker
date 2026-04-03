@@ -21,7 +21,8 @@
       --error-border:#e03131;
       --error-text:  #c92a2a;
       --warn-bg:     #fff9db;
-      --warn-border: #e67e22;
+      --warn-border: #fcc419;
+      --warn-text:   #856404;
       --ok-text:     #2f9e44;
       --tab-active:  #3b5bdb;
     }
@@ -111,20 +112,15 @@
     }
 
     .tab-btn .badge {
-      background: #717171;
       border: none;
       border-radius: 10px;
       padding: 1px 7px;
       font-size: .7rem;
-      color: #fff;
+      font-weight: 700;
     }
-
-    .tab-btn .badge.has-errors {
-      background: var(--error-border);
-      color: #fff;
-    }
-
-    .tab-btn .badge.zero { display: none; }
+    .badge-error { background: var(--error-border); color: #fff; }
+    .badge-warn  { background: var(--warn-border); color: #000; }
+    .badge.zero { display: none; }
 
     /* ===== MAIN CONTENT ===== */
     main { padding: 24px; }
@@ -155,6 +151,9 @@
     .stat-chip .label { color: var(--text-muted); }
     .stat-chip .value { font-size: 1.15rem; font-weight: 700; color: var(--text); }
     .stat-chip.errors .value { color: var(--error-text); }
+    .stat-chip.warnings .value { color: var(--warn-text); }
+    .stat-chip.errors { background: var(--error-bg); border-color: var(--error-border); }
+    .stat-chip.warnings { background: var(--warn-bg); border-color: var(--warn-border); }
 
     /* ===== TABLE ===== */
     .table-wrap {
@@ -208,6 +207,11 @@
       border-left: 3px solid var(--error-border);
     }
     tbody tr.row-error:hover { background: #ffe0e0; }
+    tbody tr.row-warning {
+      background: var(--warn-bg);
+      border-left: 3px solid var(--warn-border);
+    }
+    tbody tr.row-warning:hover { background: #fff3bf; }
 
     td {
       padding: 9px 14px;
@@ -276,6 +280,12 @@
       background: #efefef;
       border-bottom-color: var(--border);
       color: var(--text-muted);
+    }
+
+    .section-label.warning-section {
+      background: var(--warn-bg);
+      border-bottom-color: var(--warn-border);
+      color: var(--warn-text);
     }
 
     /* ===== ERROR FEED ===== */
@@ -496,19 +506,22 @@
 <nav class="tab-bar">
   <button class="tab-btn active" data-tab="tab-prodfiles" onclick="switchTab(this)">
     Production Files
-    <span class="badge" id="badge-prodfiles">-</span>
+    <span class="badge badge-error zero" id="badge-prodfiles-err">0</span>
+    <span class="badge badge-warn zero" id="badge-prodfiles-warn">0</span>
   </button>
   <button class="tab-btn" data-tab="tab-prodphotos" onclick="switchTab(this)">
     Production Photos
-    <span class="badge" id="badge-prodphotos">-</span>
+    <span class="badge badge-error zero" id="badge-prodphotos-err">0</span>
+    <span class="badge badge-warn zero" id="badge-prodphotos-warn">0</span>
   </button>
   <button class="tab-btn" data-tab="tab-proofs" onclick="switchTab(this)">
     Proofs
-    <span class="badge" id="badge-proofs">-</span>
+    <span class="badge badge-error zero" id="badge-proofs-err">0</span>
+    <span class="badge badge-warn zero" id="badge-proofs-warn">0</span>
   </button>
   <button class="tab-btn" data-tab="tab-feed" onclick="switchTab(this)">
     Error Feed
-    <span class="badge" id="badge-feed">-</span>
+    <span class="badge badge-error zero" id="badge-feed-err">0</span>
   </button>
 </nav>
 
@@ -770,22 +783,45 @@ async function fetchReport(reportId, key) {
 }
 
 // ===================================================================
-// ERROR DETECTION HELPERS
-// A row is flagged if any field whose key contains "error" has a value,
-// OR if a status/email field contains "error" (case-insensitive).
+// ERROR & WARNING DETECTION HELPERS
 // ===================================================================
-function rowHasError(record) {
-  return Object.entries(record).some(([k, v]) => {
-    if (!v) return false;
-    const keyIsError = /error/i.test(k);
-    const valIsError = typeof v === "string" && /error/i.test(v);
-    return keyIsError || valIsError;
-  });
+
+const ERR_KEYS = {
+  prodfiles:  'x_pp_factory_last_error_c',
+  prodphotos: 'x_pp_pphotos_last_error_c',
+  proofs:     'x_pp_proofs_last_error_c'
+};
+
+const WARN_KEYS = {
+  prodfiles:  'x_pp_factory_status_c',
+  prodphotos: 'x_pp_pphotos_email_c',
+  proofs:     'x_pp_proofs_email_c'
+};
+
+function rowHasError(record, tab) {
+  const key = ERR_KEYS[tab];
+  if (!key) return false;
+  const val = record[key];
+  return !!val && val !== "" && val !== "-";
+}
+
+function rowHasWarning(record, tab) {
+  const key = WARN_KEYS[tab];
+  if (!key) return false;
+  const val = record[key];
+  // Warning if value is empty or null or undefined
+  return !val || val === "";
 }
 
 function getErrorFields(record) {
+  const errKeys = ["x_pp_factory_last_error_c", "x_pp_pphotos_last_error_c", "x_pp_proofs_last_error_c"];
   return Object.entries(record)
-    .filter(([k, v]) => v && (/error/i.test(k) || (typeof v === "string" && /error/i.test(v))))
+    .filter(([k, v]) => {
+      if (!v || v === "" || v === "-") return false;
+      if (errKeys.includes(k)) return true;
+      const low = String(v).toLowerCase();
+      return low.includes("error") || low.includes("fail");
+    })
     .map(([k, v]) => `${k}: ${v}`);
 }
 
@@ -816,6 +852,31 @@ function esc(v) {
   return String(v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
 }
 
+function fmtDate(isoString) {
+  if (!isoString || isoString === "-") return "-";
+  try {
+    const d = new Date(isoString);
+    if (isNaN(d.getTime())) return esc(isoString);
+    
+    const pad = (n) => String(n).padStart(2, '0');
+    const month = pad(d.getMonth() + 1);
+    const day = pad(d.getDate());
+    const year = d.getFullYear();
+    
+    let hours = d.getHours();
+    const minutes = pad(d.getMinutes());
+    const seconds = pad(d.getSeconds());
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    
+    hours = hours % 12;
+    hours = hours ? hours : 12;
+    
+    return `${month}-${day}-${year} ${hours}:${minutes}:${seconds} ${ampm}`;
+  } catch (e) {
+    return esc(isoString);
+  }
+}
+
 // ===================================================================
 // RENDER FUNCTIONS - one per tab
 // Sugar rows/columns report field names must match what the proxy
@@ -825,103 +886,115 @@ function esc(v) {
 
 function renderProdFiles(rows) {
   const tbody = document.getElementById("tbody-prodfiles");
-  const sorted = partitionRows(rows);
+  const sorted = partitionRows(rows, "prodfiles");
   let html = "";
 
   if (sorted.errors.length) {
-    html += `<tr><td colspan="12" class="section-label">Errors (${sorted.errors.length})</td></tr>`;
-    html += sorted.errors.map(r => rowHtmlProdFiles(r, true)).join("");
+    html += `<tr><td colspan="12" class="section-label error-section">Errors (${sorted.errors.length})</td></tr>`;
+    html += sorted.errors.map(r => rowHtmlProdFiles(r, "error")).join("");
+  }
+  if (sorted.warnings.length) {
+    html += `<tr><td colspan="12" class="section-label warning-section">Warnings (${sorted.warnings.length})</td></tr>`;
+    html += sorted.warnings.map(r => rowHtmlProdFiles(r, "warning")).join("");
   }
   if (sorted.ok.length) {
     html += `<tr><td colspan="12" class="section-label ok-section">OK (${sorted.ok.length})</td></tr>`;
-    html += sorted.ok.map(r => rowHtmlProdFiles(r, false)).join("");
+    html += sorted.ok.map(r => rowHtmlProdFiles(r, "ok")).join("");
   }
   tbody.innerHTML = html || `<tr><td colspan="12" class="state-msg">No records</td></tr>`;
-  renderStats("prodfiles", rows, sorted.errors.length);
-  updateBadge("prodfiles", rows.length, sorted.errors.length);
+  renderStats("prodfiles", rows, sorted.errors.length, sorted.warnings.length);
+  updateBadge("prodfiles", sorted.errors.length, sorted.warnings.length);
 }
 
-function rowHtmlProdFiles(r, isErr) {
-  const cls = isErr ? " class=\"row-error\"" : "";
-  const err = esc(r["PP Factory Last Error"] || r["pp_factory_last_error"]);
+function rowHtmlProdFiles(r, type) {
+  const cls = (type === "error") ? " class=\"row-error\"" : (type === "warning" ? " class=\"row-warning\"" : "");
+  const err = esc(r["x_pp_factory_last_error_c"] || r["PP Factory Last Error"] || r["pp_factory_last_error"]);
   return `<tr${cls}>
-    <td>${esc(r["Order Number"] || r["order_number"])}</td>
-    <td>${esc(r["Quote Subject"] || r["quote_subject"])}</td>
-    <td>${esc(r["assigned name"] || r["assigned_name"])}</td>
-    <td>${statusPill(r["PP Factory Status"] || r["pp_factory_status"])}</td>
-    <td>${statusPill(r["PP Factory Send Method"] || r["pp_factory_send_method"])}</td>
-    <td>${esc(r["PP Factory Last Sent At"] || r["pp_factory_last_sent_at"])}</td>
-    <td style="font-size:.72rem;">${esc(r["PP Factory File Names"] || r["pp_factory_file_names"])}</td>
-    <td>${esc(r["PP Factory File Count"] || r["pp_factory_file_count"])}</td>
-    <td>${fmtSize(r["PP Factory Total Size"] || r["pp_factory_total_size"])}</td>
-    <td>${esc(r["PP Factory Next Retry"] || r["pp_factory_next_retry"])}</td>
+    <td>${esc(r["order_number_c"] || r["Order Number"] || r["order_number"])}</td>
+    <td>${esc(r["name"] || r["Quote Subject"] || r["quote_subject"])}</td>
+    <td>${esc(r["assigned_user_name"] || r["assigned name"] || r["assigned_name"])}</td>
+    <td>${statusPill(r["x_pp_factory_status_c"] || r["PP Factory Status"] || r["pp_factory_status"])}</td>
+    <td>${statusPill(r["x_pp_factory_send_method_c"] || r["PP Factory Send Method"] || r["pp_factory_send_method"])}</td>
+    <td>${fmtDate(r["x_pp_factory_last_sent_at_c"] || r["PP Factory Last Sent At"] || r["pp_factory_last_sent_at"])}</td>
+    <td style="font-size:.72rem;">${esc(r["x_pp_factory_file_names_c"] || r["PP Factory File Names"] || r["pp_factory_file_names"])}</td>
+    <td>${esc(r["x_pp_factory_file_count_c"] || r["PP Factory File Count"] || r["pp_factory_file_count"])}</td>
+    <td>${fmtSize(r["x_pp_factory_total_size_c"] || r["PP Factory Total Size"] || r["pp_factory_total_size"])}</td>
+    <td>${fmtDate(r["x_pp_factory_next_retry_at_c"] || r["PP Factory Next Retry At"] || r["pp_factory_next_retry"])}</td>
     <td class="${err !== "-" ? "error-cell" : ""}">${err}</td>
-    <td>${esc(r["Date Modified"] || r["date_modified"])}</td>
+    <td>${fmtDate(r["date_modified"] || r["Date Modified"])}</td>
   </tr>`;
 }
 
 function renderProdPhotos(rows) {
   const tbody = document.getElementById("tbody-prodphotos");
-  const sorted = partitionRows(rows);
+  const sorted = partitionRows(rows, "prodphotos");
   let html = "";
 
   if (sorted.errors.length) {
-    html += `<tr><td colspan="7" class="section-label">Errors (${sorted.errors.length})</td></tr>`;
-    html += sorted.errors.map(r => rowHtmlProdPhotos(r, true)).join("");
+    html += `<tr><td colspan="7" class="section-label error-section">Errors (${sorted.errors.length})</td></tr>`;
+    html += sorted.errors.map(r => rowHtmlProdPhotos(r, "error")).join("");
+  }
+  if (sorted.warnings.length) {
+    html += `<tr><td colspan="7" class="section-label warning-section">Warnings (${sorted.warnings.length})</td></tr>`;
+    html += sorted.warnings.map(r => rowHtmlProdPhotos(r, "warning")).join("");
   }
   if (sorted.ok.length) {
     html += `<tr><td colspan="7" class="section-label ok-section">OK (${sorted.ok.length})</td></tr>`;
-    html += sorted.ok.map(r => rowHtmlProdPhotos(r, false)).join("");
+    html += sorted.ok.map(r => rowHtmlProdPhotos(r, "ok")).join("");
   }
   tbody.innerHTML = html || `<tr><td colspan="7" class="state-msg">No records</td></tr>`;
-  renderStats("prodphotos", rows, sorted.errors.length);
-  updateBadge("prodphotos", rows.length, sorted.errors.length);
+  renderStats("prodphotos", rows, sorted.errors.length, sorted.warnings.length);
+  updateBadge("prodphotos", sorted.errors.length, sorted.warnings.length);
 }
 
-function rowHtmlProdPhotos(r, isErr) {
-  const cls = isErr ? " class=\"row-error\"" : "";
-  const err = esc(r["pp pphotos last error"] || r["pp_pphotos_last_error"]);
+function rowHtmlProdPhotos(r, type) {
+  const cls = (type === "error") ? " class=\"row-error\"" : (type === "warning" ? " class=\"row-warning\"" : "");
+  const err = esc(r["x_pp_pphotos_last_error_c"] || r["pp pphotos last error"] || r["pp_pphotos_last_error"]);
   return `<tr${cls}>
-    <td>${esc(r["Name"] || r["name"])}</td>
-    <td style="font-size:.72rem;">${esc(r["User Name"] || r["user_name"])}</td>
-    <td>${esc(r["Production Photo status"] || r["production_photo_status"])}</td>
-    <td>${esc(r["Production Photo Approval"] || r["production_photo_approval"])}</td>
-    <td>${statusPill(r["pp pphotos email"] || r["pp_pphotos_email"])}</td>
-    <td>${esc(r["pp pphotos date"] || r["pp_pphotos_date"])}</td>
+    <td>${esc(r["name"] || r["Name"])}</td>
+    <td style="font-size:.72rem;">${esc(r["assigned_user_name"] || r["User Name"] || r["user_name"])}</td>
+    <td>${esc(r["sample_photo_status_c"] || r["Production Photo status"] || r["production_photo_status"])}</td>
+    <td>${esc(r["sample_photo_approval_c"] || r["Production Photo Approval"] || r["production_photo_approval"])}</td>
+    <td>${statusPill(r["x_pp_pphotos_email_c"] || r["pp pphotos email"] || r["pp_pphotos_email"])}</td>
+    <td>${fmtDate(r["x_pp_pphotos_date_c"] || r["pp pphotos date"] || r["pp_pphotos_date"])}</td>
     <td class="${err !== "-" ? "error-cell" : ""}">${err}</td>
   </tr>`;
 }
 
 function renderProofs(rows) {
   const tbody = document.getElementById("tbody-proofs");
-  const sorted = partitionRows(rows);
+  const sorted = partitionRows(rows, "proofs");
   let html = "";
 
   if (sorted.errors.length) {
-    html += `<tr><td colspan="9" class="section-label">Errors (${sorted.errors.length})</td></tr>`;
-    html += sorted.errors.map(r => rowHtmlProofs(r, true)).join("");
+    html += `<tr><td colspan="9" class="section-label error-section">Errors (${sorted.errors.length})</td></tr>`;
+    html += sorted.errors.map(r => rowHtmlProofs(r, "error")).join("");
+  }
+  if (sorted.warnings.length) {
+    html += `<tr><td colspan="9" class="section-label warning-section">Warnings (${sorted.warnings.length})</td></tr>`;
+    html += sorted.warnings.map(r => rowHtmlProofs(r, "warning")).join("");
   }
   if (sorted.ok.length) {
     html += `<tr><td colspan="9" class="section-label ok-section">OK (${sorted.ok.length})</td></tr>`;
-    html += sorted.ok.map(r => rowHtmlProofs(r, false)).join("");
+    html += sorted.ok.map(r => rowHtmlProofs(r, "ok")).join("");
   }
   tbody.innerHTML = html || `<tr><td colspan="9" class="state-msg">No records</td></tr>`;
-  renderStats("proofs", rows, sorted.errors.length);
-  updateBadge("proofs", rows.length, sorted.errors.length);
+  renderStats("proofs", rows, sorted.errors.length, sorted.warnings.length);
+  updateBadge("proofs", sorted.errors.length, sorted.warnings.length);
 }
 
-function rowHtmlProofs(r, isErr) {
-  const cls = isErr ? " class=\"row-error\"" : "";
-  const err = esc(r["pp proofs last error"] || r["pp_proofs_last_error"]);
+function rowHtmlProofs(r, type) {
+  const cls = (type === "error") ? " class=\"row-error\"" : (type === "warning" ? " class=\"row-warning\"" : "");
+  const err = esc(r["x_pp_proofs_last_error_c"] || r["pp proofs last error"] || r["pp_proofs_last_error"]);
   return `<tr${cls}>
-    <td>${esc(r["Project"] || r["project"])}</td>
-    <td>${esc(r["Account Name"] || r["account_name"])}</td>
-    <td>${esc(r["account assigned user"] || r["account_assigned_user"])}</td>
-    <td>${esc(r["Proof Confirmation Stage"] || r["proof_confirmation_stage"])}</td>
-    <td style="font-size:.72rem;">${esc(r["Send To Client For Review"] || r["send_to_client_for_review"])}</td>
-    <td>${statusPill(r["pp proofs email"] || r["pp_proofs_email"])}</td>
-    <td>${esc(r["pp proofs date"] || r["pp_proofs_date"])}</td>
-    <td>${esc(r["Date Modified"] || r["date_modified"])}</td>
+    <td>${esc(r["name"] || r["Project"] || r["project"])}</td>
+    <td>${esc(r["account_name_c"] || r["Account Name"] || r["account_name"])}</td>
+    <td>${esc(r["assigned_user_name"] || r["account assigned user"] || r["account_assigned_user"])}</td>
+    <td>${esc(r["ac_confirmation_stage_c"] || r["Proof Confirmation Stage"] || r["proof_confirmation_stage"])}</td>
+    <td style="font-size:.72rem;">${esc(r["send_to_client_for_review_c"] || r["Send To Client For Review"] || r["send_to_client_for_review"])}</td>
+    <td>${statusPill(r["x_pp_proofs_email_c"] || r["pp proofs email"] || r["pp_proofs_email"])}</td>
+    <td>${fmtDate(r["x_pp_proofs_date_c"] || r["pp proofs date"] || r["pp_proofs_date"])}</td>
+    <td>${fmtDate(r["date_modified"] || r["Date Modified"])}</td>
     <td class="${err !== "-" ? "error-cell" : ""}">${err}</td>
   </tr>`;
 }
@@ -929,13 +1002,14 @@ function rowHtmlProofs(r, isErr) {
 // ===================================================================
 // SHARED HELPERS
 // ===================================================================
-function partitionRows(rows) {
-  const errors = rows.filter(rowHasError);
-  const ok     = rows.filter(r => !rowHasError(r));
-  return { errors, ok };
+function partitionRows(rows, tab) {
+  const errors = rows.filter(r => rowHasError(r, tab));
+  const warnings = rows.filter(r => !rowHasError(r, tab) && rowHasWarning(r, tab));
+  const ok = rows.filter(r => !rowHasError(r, tab) && !rowHasWarning(r, tab));
+  return { errors, warnings, ok };
 }
 
-function renderStats(key, rows, errorCount) {
+function renderStats(key, rows, errorCount, warnCount) {
   const el = document.getElementById(`stats-${key}`);
   el.innerHTML = `
     <div class="stat-chip">
@@ -944,23 +1018,26 @@ function renderStats(key, rows, errorCount) {
     </div>
     <div class="stat-chip ${errorCount > 0 ? "errors" : ""}">
       <span class="label">Errors</span>
-      <span class="value">${errorCount}</span>
+      <span class="value">${errorCount || 0}</span>
     </div>
-    <div class="stat-chip">
-      <span class="label">OK</span>
-      <span class="value">${rows.length - errorCount}</span>
+    <div class="stat-chip ${warnCount > 0 ? "warnings" : ""}">
+      <span class="label">Warnings</span>
+      <span class="value">${warnCount || 0}</span>
     </div>
   `;
 }
 
-function updateBadge(key, total, errors) {
-  const badge = document.getElementById(`badge-${key}`);
-  if (errors > 0) {
-    badge.textContent = errors;
-    badge.className = "badge has-errors";
-  } else {
-    badge.textContent = "0";
-    badge.className = "badge zero";
+function updateBadge(key, errCount, warnCount) {
+  const eB = document.getElementById(`badge-${key}-err`);
+  const wB = document.getElementById(`badge-${key}-warn`);
+
+  if (eB) {
+    eB.innerText = errCount || 0;
+    eB.classList.toggle("zero", !errCount);
+  }
+  if (wB) {
+    wB.innerText = warnCount || 0;
+    wB.classList.toggle("zero", !warnCount);
   }
 }
 
@@ -1006,18 +1083,18 @@ function sortTable(key, colIndex) {
   });
 
   // Re-render with sort applied (errors still bubble to top)
-  const { errors, ok } = partitionRows(s.rows);
+  const { errors, warnings, ok } = partitionRows(s.rows, key);
   const sortFn = (a, b) => {
-    const cols = Object.values(a);
     const aVal = String(Object.values(a)[colIndex] || "");
     const bVal = String(Object.values(b)[colIndex] || "");
     return aVal.localeCompare(bVal, undefined, { numeric: true }) * s.sortDir;
   };
   errors.sort(sortFn);
+  warnings.sort(sortFn);
   ok.sort(sortFn);
 
   const renderFns = { prodfiles: renderProdFiles, prodphotos: renderProdPhotos, proofs: renderProofs };
-  renderFns[key]([...errors, ...ok]);
+  renderFns[key]([...errors, ...warnings, ...ok]);
 }
 
 // ===================================================================
@@ -1131,37 +1208,28 @@ function dedupeEvents(events) {
 // any order numbers that now show a clean status.
 //
 // Rules:
-//   production-process  -> clear if PP Factory Last Error is blank/null
-//   production-photos   -> clear if pp pphotos email is Sent or Complete
-//   proofs              -> clear if pp proofs email is Sent, Complete, or Opt-Out
-// ===================================================================
 function autoClearFromReports() {
   const clearedOrders = new Set();
 
   // --- production-process ---
   for (const row of (state.prodfiles.rows || [])) {
-    const orderNum = String(row["Order Number"] || row["order_number"] || "").trim();
-    const lastErr  = row["PP Factory Last Error"] || row["pp_factory_last_error"];
-    if (orderNum && !lastErr) clearedOrders.add(orderNum);
+    const orderNum = String(row["order_number_c"] || row["Order Number"] || row["order_number"] || "").trim();
+    if (orderNum && !rowHasError(row, "prodfiles")) clearedOrders.add(orderNum);
   }
 
   // --- production-photos ---
-  const photoOkStatuses = new Set(["sent", "complete"]);
   for (const row of (state.prodphotos.rows || [])) {
     // Name field starts with order number e.g. "141212 CITI Bucket Hat..."
-    const name     = String(row["Name"] || row["name"] || "").trim();
+    const name     = String(row["name"] || row["Name"] || "").trim();
     const orderNum = name.split(" ")[0];
-    const emailVal = String(row["pp pphotos email"] || row["pp_pphotos_email"] || "").toLowerCase();
-    if (orderNum && photoOkStatuses.has(emailVal)) clearedOrders.add(orderNum);
+    if (orderNum && !rowHasError(row, "prodphotos")) clearedOrders.add(orderNum);
   }
 
   // --- proofs ---
-  const proofsOkStatuses = new Set(["sent", "complete", "opt-out"]);
   for (const row of (state.proofs.rows || [])) {
-    const project  = String(row["Project"] || row["project"] || "").trim();
+    const project  = String(row["name"] || row["Project"] || row["project"] || "").trim();
     const orderNum = project.split(" ")[0].replace(/\s/g, "");
-    const emailVal = String(row["pp proofs email"] || row["pp_proofs_email"] || "").toLowerCase();
-    if (orderNum && proofsOkStatuses.has(emailVal)) clearedOrders.add(orderNum);
+    if (orderNum && !rowHasError(row, "proofs")) clearedOrders.add(orderNum);
   }
 
   if (!clearedOrders.size) return;
@@ -1291,16 +1359,12 @@ function renderFeed() {
 }
 
 function updateFeedBadge() {
-  const badge   = document.getElementById("badge-feed");
+  const badge   = document.getElementById("badge-feed-err");
+  if (!badge) return;
   const active  = (feedState.dedupedGroups || []).filter(g => !feedState.dismissed.has(g.order_number));
   const count   = active.length;
-  if (count > 0) {
-    badge.textContent = count;
-    badge.className   = "badge has-errors";
-  } else {
-    badge.textContent = "0";
-    badge.className   = "badge zero";
-  }
+  badge.textContent = count || 0;
+  badge.classList.toggle("zero", !count);
 }
 
 // ===================================================================

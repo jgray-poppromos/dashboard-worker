@@ -59,4 +59,6 @@ WEBHOOK_SECRET=your_test_secret_here
 ```
 
 ## Updates
+
 - **2026-04-02**: Patched an authentication bypass into the dashboard worker so that it securely calls sugar-proxy utilizing a User-Agent: Google-Apps-Script spoof. This removes the need for browser clients to possess the proxy secret.
+- **2026-04-03**: Implemented human-readable date formatting (MM-DD-YYYY h:mm:ss AM/PM) in the UI (`index.html`) and added a `isDuplicateError` utility to `dashboard-worker.js` to ensure the dashboard remains clean and focused on unique issues.
