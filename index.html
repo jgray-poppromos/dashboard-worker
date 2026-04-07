@@ -1214,6 +1214,9 @@ function dedupeEvents(events) {
 //
 // Rules:
 function autoClearFromReports() {
+  // DISABLED: This aggressively hides active webhook errors if the report hasn't updated yet.
+  return; 
+
   const clearedOrders = new Set();
 
   // --- production-process ---
