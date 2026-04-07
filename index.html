@@ -1187,19 +1187,24 @@ feedState.dismissed = new Set(); // persists across polls within session
 function dedupeEvents(events) {
   const map = new Map();
   for (const evt of events) {
+    const ts = evt.timestamp || new Date().toISOString(); // Fallback for older events
     const key = `${evt.worker}||${evt.order_number}||${evt.error_message}`;
     if (!map.has(key)) {
-      map.set(key, { ...evt, count: 1, firstSeen: evt.timestamp, lastSeen: evt.timestamp });
+      map.set(key, { ...evt, count: 1, firstSeen: ts, lastSeen: ts });
     } else {
       const g = map.get(key);
       g.count++;
       // keep the most recent timestamp as lastSeen, earliest as firstSeen
-      if (evt.timestamp > g.lastSeen)  g.lastSeen  = evt.timestamp;
-      if (evt.timestamp < g.firstSeen) g.firstSeen = evt.timestamp;
+      if (ts > g.lastSeen)  g.lastSeen  = ts;
+      if (ts < g.firstSeen) g.firstSeen = ts;
     }
   }
   // Sort newest lastSeen first
-  return Array.from(map.values()).sort((a, b) => b.lastSeen.localeCompare(a.lastSeen));
+  return Array.from(map.values()).sort((a, b) => {
+    const tA = a.lastSeen || "";
+    const tB = b.lastSeen || "";
+    return tB.localeCompare(tA);
+  });
 }
 
 // ===================================================================
@@ -1283,7 +1288,7 @@ function clearOrderErrors(orderNumber) {
 // FEED - FETCH EVENTS
 // ===================================================================
 async function fetchFeedEvents() {
-  const res = await fetch(`${DASHBOARD_WORKER_BASE}/events`);
+  const res = await fetch(`${DASHBOARD_WORKER_BASE}/events`, { credentials: "same-origin" });
   if (!res.ok) throw new Error(`Feed fetch failed: ${res.status}`);
   return await res.json();
 }

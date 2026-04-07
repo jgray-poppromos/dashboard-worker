@@ -56,12 +56,12 @@ async function isDuplicateError(kv, body) {
   const worker = body.worker || 'unknown';
   const orderNum = body.order_number || 'unknown';
 
-  const fetchPromises = list.keys.map(k => kv.get(k.name, 'json'));
+  const fetchPromises = list.keys.map(k => kv.get(k.name, 'json').catch(() => null));
   const values = await Promise.all(fetchPromises);
 
   return values.some(v => 
     v && 
-    v.order_number === orderNum && 
+    String(v.order_number) === String(orderNum) && 
     v.worker === worker && 
     v.error_message === msg
   );
@@ -166,7 +166,7 @@ export default {
         const list = await env.DASHBOARD_KV.list({ prefix: 'event:', limit: 200 });
         
         const keysToFetch = list.keys;
-        const fetchPromises = keysToFetch.map(k => env.DASHBOARD_KV.get(k.name, 'json'));
+        const fetchPromises = keysToFetch.map(k => env.DASHBOARD_KV.get(k.name, 'json').catch(() => null));
         const values = await Promise.all(fetchPromises);
         
         // Filter out nulls in case of race condition expiry
